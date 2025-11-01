@@ -1,73 +1,95 @@
 import cv2
-import numpy as np
-import subprocess
+from pyzbar.pyzbar import decode
 import os
 
-# Paths to required files
-javase_jar = "javase-3.5.0.jar"
-core_jar = "core-3.5.0.jar"
-jcommander_jar = "jcommander-1.82.jar"
+def decode_all_barcodes(image_path):
+    """Decode all types of barcodes from image"""
+    
+    if not os.path.exists(image_path):
+        print(f"Error: Image file '{image_path}' not found!")
+        return None
+    
+    print("="*70)
+    print("UNIVERSAL BARCODE DECODER")
+    print("="*70)
+    print(f"Processing: {image_path}\n")
+    
+    try:
+        # Load image
+        image = cv2.imread(image_path)
+        
+        # Decode all barcodes
+        barcodes = decode(image)
+        
+        if not barcodes:
+            print("❌ No barcodes detected!")
+            return None
+        
+        print(f"✅ Found {len(barcodes)} barcode(s)\n")
+        
+        results = []
+        
+        for i, barcode in enumerate(barcodes, 1):
+            # Extract data
+            barcode_data = barcode.data.decode('utf-8')
+            barcode_type = barcode.type
+            (x, y, w, h) = barcode.rect
+            
+            results.append({
+                'type': barcode_type,
+                'data': barcode_data
+            })
+            
+            # Print details
+            print(f"🔍 Barcode #{i}")
+            print(f"   Type: {barcode_type}")
+            print(f"   Data: {barcode_data}")
+            print(f"   Position: (x={x}, y={y})")
+            print(f"   Size: {w}x{h} pixels")
+            
+            # Special handling for EAN-13
+            if barcode_type == 'EAN13' and len(barcode_data) == 13:
+                print(f"\n   📊 EAN-13 Structure:")
+                print(f"      Prefix: {barcode_data[:3]}")
+                print(f"      Manufacturer: {barcode_data[3:7]}")
+                print(f"      Product: {barcode_data[7:12]}")
+                print(f"      Check: {barcode_data[12]}")
+            
+            print("-" * 70)
+            
+            # Visualize
+            cv2.rectangle(image, (x, y), (x + w, y + h), (0, 255, 0), 3)
+            
+            label = f"{barcode_type}: {barcode_data}"
+            cv2.putText(image, label, (x, y - 10), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+        
+        # Save and display
+        output_path = "barcodes_decoded.png"
+        cv2.imwrite(output_path, image)
+        print(f"\n💾 Saved: {output_path}")
+        
+        cv2.imshow("Barcode Detection", image)
+        print("\n👁️  Press any key to close...")
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
+        
+        return results
+        
+    except Exception as e:
+        print(f"❌ Error: {str(e)}")
+        return None
 
-barcode_image = "image.png"
-
-# Validate required files
-for file in [javase_jar, core_jar, jcommander_jar, barcode_image]:
-    if not os.path.exists(file):
-        print(f"Error: {file} not found!")
-        exit(1)
-
-# Docker command to detect the barcode and get its position
-docker_command = [
-    "docker", "run", "--rm",
-    "-v", f"{os.getcwd()}:/app",
-    "openjdk:17",
-    "java", "-cp",
-    f"/app/{javase_jar}:/app/{core_jar}:/app/{jcommander_jar}",
-    "com.google.zxing.client.j2se.CommandLineRunner",
-    f"/app/{barcode_image}"
-]
-
-try:
-    # Run the Docker command to get the decoding and position
-    result = subprocess.run(docker_command, capture_output=True, text=True, check=True)
-    output = result.stdout.strip()
-    print("Decoded Output:")
-    print(output)
-except subprocess.CalledProcessError as e:
-    print("Error during decoding:")
-    print(e.stderr)
-    exit(1)
-
-# Parse the ZXing output for barcode position
-points = []
-for line in output.splitlines():
-    if line.startswith("  Point"):
-        parts = line.split(":")[1].strip().replace("(", "").replace(")", "").split(",")
-        points.append((int(float(parts[0])), int(float(parts[1]))))
-
-# If points are found, draw a bounding polygon
-if len(points) >= 4:
-    # Load the image with OpenCV
-    image = cv2.imread(barcode_image)
-    if image is None:
-        print("Error: Unable to read the image!")
-        exit(1)
-
-    # Draw a polygon connecting the points
-    points_array = np.array(points, dtype=np.int32).reshape((-1, 1, 2))
-    print(f"Drawing polygon with points: {points}")
-
-    cv2.polylines(image, [points_array], isClosed=True, color=(0, 255, 0), thickness=2)
-
-    # Save and display the annotated image
-    annotated_image_path = "annotated_barcode.png"
-    cv2.imwrite(annotated_image_path, image)
-    print(f"Annotated image saved as {annotated_image_path}")
-
-    # Display the image
-    cv2.imshow("Detected Barcode", image)
-    print("Press any key to close the window.")
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
-else:
-    print("No bounding box points detected.")
+if __name__ == "__main__":
+    # Change this to your image path
+    image_file = "barcode.png"
+    
+    # Decode all barcodes
+    results = decode_all_barcodes(image_file)
+    
+    if results:
+        print("\n" + "="*70)
+        print("SUMMARY")
+        print("="*70)
+        for i, item in enumerate(results, 1):
+            print(f"{i}. [{item['type']}] {item['data']}")
